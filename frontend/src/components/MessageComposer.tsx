@@ -56,8 +56,8 @@ const MessageComposer: React.FC<MessageComposerProps> = ({ contacts }) => {
       setSendStatus({ type: 'error', message: 'No contacts to send to. Please add contacts first.' });
       return;
     }
-    if (!heading && !content && !mediaFile) {
-        setSendStatus({ type: 'error', message: 'Cannot send an empty message.' });
+    if (!content.trim() && !mediaFile) {
+        setSendStatus({ type: 'error', message: 'A message must contain either text content or a media file.' });
         return;
     }
 

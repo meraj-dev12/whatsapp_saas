@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Contact } from '../types';
-import { LogoutIcon, PaperAirplaneIcon, LoadingSpinner } from './icons';
+import { LogoutIcon, PaperAirplaneIcon } from './icons';
 import ContactManager from './ContactManager';
 import MessageComposer from './MessageComposer';
 import * as api from '../services/apiService';
@@ -14,20 +14,23 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const fetchContacts = async () => {
-      try {
-        const fetchedContacts = await api.getContacts();
-        setContacts(fetchedContacts);
-      } catch (err) {
-        setError('Failed to load contacts. Please refresh the page.');
-        console.error(err);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    fetchContacts();
+  const fetchContacts = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const fetchedContacts = await api.getContacts();
+      setContacts(fetchedContacts);
+    } catch (err) {
+      setError('Failed to load contacts. Please try again.');
+      console.error(err);
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    fetchContacts();
+  }, [fetchContacts]);
 
   const addContact = async (contact: Omit<Contact, 'id'>) => {
     const newContact = await api.addContact(contact);
@@ -63,22 +66,21 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onLogout }) => {
       </header>
 
       <main className="p-4 sm:p-6 lg:p-8">
-        {isLoading ? (
-          <div className="flex justify-center items-center h-96">
-            <LoadingSpinner className="h-12 w-12 text-indigo-400" />
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
+          <div className="lg:col-span-2">
+            <ContactManager
+              contacts={contacts}
+              onAddContact={addContact}
+              onDeleteContact={deleteContact}
+              isLoading={isLoading}
+              error={error}
+              onRetry={fetchContacts}
+            />
           </div>
-        ) : error ? (
-          <div className="text-center text-red-400 bg-red-900/30 p-4 rounded-lg">{error}</div>
-        ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
-            <div className="lg:col-span-2">
-              <ContactManager contacts={contacts} onAddContact={addContact} onDeleteContact={deleteContact} />
-            </div>
-            <div className="lg:col-span-3">
-              <MessageComposer contacts={contacts} />
-            </div>
+          <div className="lg:col-span-3">
+            <MessageComposer contacts={contacts} />
           </div>
-        )}
+        </div>
       </main>
     </div>
   );

@@ -21,6 +21,6 @@ const ContactSchema = new mongoose.Schema({
   },
 });
 
-// Mongoose automatically looks for the plural, lowercased version of your model name.
-// Thus, the 'Contact' model is for the 'contacts' collection.
-module.exports = mongoose.model('Contact', ContactSchema);
+// To prevent Mongoose from throwing an OverwriteModelError in a serverless environment
+// where the model might be compiled multiple times, we check if the model already exists.
+module.exports = mongoose.models.Contact || mongoose.model('Contact', ContactSchema);

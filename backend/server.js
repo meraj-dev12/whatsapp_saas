@@ -1,3 +1,6 @@
+
+
+
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
@@ -18,19 +21,34 @@ const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
 // --- Database Connection ---
-const MONGO_URI = process.env.MONGO_URI;
+// We cache the connection promise to avoid reconnecting on every serverless function invocation.
+let cachedDbPromise = null;
 
-// Vercel handles one-time connection, no need for complex logic here for now
-if (MONGO_URI) {
-  mongoose.connect(MONGO_URI)
-    .then(() => console.log('MongoDB Connected successfully.'))
-    .catch(err => {
-      console.error('MongoDB connection error:', err);
-      // In a serverless environment, we log the error but don't exit the process
-    });
-} else {
-  console.warn('MONGO_URI not found. Database features will not be available.');
-}
+const connectToDatabase = async () => {
+  if (cachedDbPromise) {
+    console.log('Using cached database connection');
+    return cachedDbPromise;
+  }
+
+  const MONGO_URI = process.env.MONGO_URI;
+  if (!MONGO_URI) {
+    throw new Error('MONGO_URI not found. Database features will not be available.');
+  }
+  
+  try {
+    console.log('Creating new database connection...');
+    cachedDbPromise = mongoose.connect(MONGO_URI);
+    await cachedDbPromise;
+    console.log('MongoDB Connected successfully.');
+  } catch (err) {
+    console.error('MongoDB connection error:', err);
+    cachedDbPromise = null; // Reset cache on error
+    throw err; // Rethrow to be caught in the route handler
+  }
+  
+  return cachedDbPromise;
+};
+
 
 // --- API Routes ---
 const transformContact = (contact) => {
@@ -41,6 +59,7 @@ const transformContact = (contact) => {
 // GET all contacts
 app.get('/api/contacts', async (req, res) => {
   try {
+    await connectToDatabase();
     const contacts = await Contact.find().sort({ name: 1 });
     res.json(contacts.map(transformContact));
   } catch (err) {
@@ -52,6 +71,7 @@ app.get('/api/contacts', async (req, res) => {
 // POST a new contact
 app.post('/api/contacts', async (req, res) => {
   try {
+    await connectToDatabase();
     const newContact = new Contact({
       name: req.body.name,
       phone: req.body.phone,
@@ -74,6 +94,7 @@ app.post('/api/contacts', async (req, res) => {
 // DELETE a contact by ID
 app.delete('/api/contacts/:id', async (req, res) => {
   try {
+    await connectToDatabase();
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
         return res.status(400).json({ message: 'Invalid contact ID format.' });
     }
@@ -124,9 +145,10 @@ app.get('/api/webhook', (req, res) => {
 app.post('/api/send-bulk', upload.single('media'), (req, res) => {
   const { heading, content, contacts: contactsJSON } = req.body;
   const mediaFile = req.file;
+  const hasTextContent = content && content.trim().length > 0;
 
-  if (!content) {
-    return res.status(400).json({ message: 'Message content cannot be empty.' });
+  if (!hasTextContent && !mediaFile) {
+    return res.status(400).json({ message: 'A message must contain either text content or a media file.' });
   }
 
   let contacts;
@@ -154,6 +176,21 @@ app.post('/api/send-bulk', upload.single('media'), (req, res) => {
   setTimeout(() => {
     res.status(200).json({ message: `Message successfully sent to ${contacts.length} contacts.` });
   }, 1500);
+});
+
+// --- Generic Error Handler ---
+// This middleware must be defined last, after all other app.use() and routes.
+// It catches any unhandled errors from the routes above and ensures a consistent JSON error response.
+app.use((err, req, res, next) => {
+  console.error("UNHANDLED ERROR:", err.stack || err);
+
+  // Handle Multer-specific errors
+  if (err instanceof multer.MulterError) {
+    return res.status(400).json({ message: `File upload error: ${err.message}` });
+  }
+
+  // Generic fallback for other errors
+  res.status(500).json({ message: "An internal server error occurred. Please try again later." });
 });
 
 

@@ -6,12 +6,22 @@ interface ContactManagerProps {
   contacts: Contact[];
   onAddContact: (contact: Omit<Contact, 'id'>) => Promise<void>;
   onDeleteContact: (id: string) => void;
+  isLoading: boolean;
+  error: string | null;
+  onRetry: () => void;
 }
 
-const ContactManager: React.FC<ContactManagerProps> = ({ contacts, onAddContact, onDeleteContact }) => {
+const ContactManager: React.FC<ContactManagerProps> = ({ 
+  contacts, 
+  onAddContact, 
+  onDeleteContact,
+  isLoading,
+  error,
+  onRetry
+}) => {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
-  const [error, setError] = useState('');
+  const [formError, setFormError] = useState('');
   const [isAdding, setIsAdding] = useState(false);
 
   const E164_REGEX = /^\+[1-9]\d{1,14}$/;
@@ -19,21 +29,21 @@ const ContactManager: React.FC<ContactManagerProps> = ({ contacts, onAddContact,
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !phone.trim()) {
-      setError('Name and phone number cannot be empty.');
+      setFormError('Name and phone number cannot be empty.');
       return;
     }
     if (!E164_REGEX.test(phone)) {
-      setError('Phone number must be in E.164 format (e.g., +12125551234).');
+      setFormError('Phone number must be in E.164 format (e.g., +12125551234).');
       return;
     }
-    setError('');
+    setFormError('');
     setIsAdding(true);
     try {
       await onAddContact({ name, phone });
       setName('');
       setPhone('');
     } catch (err: any) {
-      setError(err.message || 'An unexpected error occurred.');
+      setFormError(err.message || 'An unexpected error occurred.');
     } finally {
       setIsAdding(false);
     }
@@ -69,7 +79,7 @@ const ContactManager: React.FC<ContactManagerProps> = ({ contacts, onAddContact,
               placeholder="+14155552671"
             />
           </div>
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {formError && <p className="text-sm text-red-400">{formError}</p>}
           <button 
             type="submit" 
             disabled={isAdding}
@@ -84,7 +94,21 @@ const ContactManager: React.FC<ContactManagerProps> = ({ contacts, onAddContact,
       <div className="bg-gray-800 p-6 rounded-lg shadow-lg">
         <h2 className="text-xl font-semibold mb-4">Contact List ({contacts.length})</h2>
         <div className="max-h-96 overflow-y-auto">
-          {contacts.length > 0 ? (
+          {isLoading ? (
+            <div className="flex justify-center items-center py-10">
+              <LoadingSpinner className="h-8 w-8 text-indigo-400" />
+            </div>
+          ) : error ? (
+            <div className="text-center bg-red-900/30 p-4 rounded-lg">
+              <p className="text-red-400 mb-4">{error}</p>
+              <button
+                onClick={onRetry}
+                className="px-4 py-2 text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 focus:ring-offset-gray-900 transition-colors"
+              >
+                Retry
+              </button>
+            </div>
+          ) : contacts.length > 0 ? (
             <table className="min-w-full divide-y divide-gray-700">
               <thead className="bg-gray-700/50 sticky top-0">
                 <tr>
