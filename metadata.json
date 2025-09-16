@@ -1,0 +1,5 @@
+{
+  "name": "WhatsApp Bulk Messenger Admin",
+  "description": "An admin panel to manage contacts and send bulk promotional messages via a simulated WhatsApp API integration. This application features an AI-powered message generator using the Gemini API to help craft compelling content.",
+  "requestFramePermissions": []
+}
