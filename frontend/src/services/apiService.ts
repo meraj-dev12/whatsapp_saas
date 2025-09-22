@@ -58,3 +58,14 @@ export const sendBulkMessage = async (payload: SendMessagePayload): Promise<{ me
 
   return handleResponse(response);
 };
+
+export const generateAiContent = async (heading: string): Promise<{ content: string }> => {
+  const response = await fetch(`${API_BASE_URL}/generate-content`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ heading }),
+  });
+  return handleResponse(response);
+};

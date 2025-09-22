@@ -1,6 +1,5 @@
 import React, { useState, useCallback } from 'react';
 import { Contact } from '../types';
-import { generateMessageContent } from '../services/geminiService';
 import * as api from '../services/apiService';
 import { PaperAirplaneIcon, SparklesIcon, LoadingSpinner } from './icons';
 
@@ -41,8 +40,8 @@ const MessageComposer: React.FC<MessageComposerProps> = ({ contacts }) => {
     setAiError(null);
     setIsGenerating(true);
     try {
-      const generatedContent = await generateMessageContent(heading);
-      setContent(generatedContent);
+      const response = await api.generateAiContent(heading);
+      setContent(response.content);
     } catch (error: any) {
       setAiError(error.message || "An unknown error occurred.");
     } finally {

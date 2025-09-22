@@ -1,10 +1,9 @@
 
-
-
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const multer = require('multer');
+const { GoogleGenAI } = require('@google/genai');
 require('dotenv').config();
 
 const Contact = require('./models/Contact');
@@ -20,33 +19,54 @@ app.use(express.json()); // Parse JSON bodies
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
+// --- Gemini AI Setup ---
+let ai;
+if (process.env.API_KEY) {
+  ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+} else {
+  console.warn("API_KEY environment variable not set. AI features will be disabled.");
+}
+
 // --- Database Connection ---
-// We cache the connection promise to avoid reconnecting on every serverless function invocation.
-let cachedDbPromise = null;
+// We cache the connection and promise to avoid reconnecting on every serverless function invocation.
+// This is the recommended pattern for Mongoose on serverless platforms like Vercel.
+let cached = {
+  conn: null,
+  promise: null,
+};
 
 const connectToDatabase = async () => {
-  if (cachedDbPromise) {
+  if (cached.conn) {
     console.log('Using cached database connection');
-    return cachedDbPromise;
+    return cached.conn;
   }
 
-  const MONGO_URI = process.env.MONGO_URI;
-  if (!MONGO_URI) {
-    throw new Error('MONGO_URI not found. Database features will not be available.');
+  if (!cached.promise) {
+    const MONGO_URI = process.env.MONGO_URI;
+    if (!MONGO_URI) {
+      throw new Error('MONGO_URI not found in environment variables. Database features will not be available.');
+    }
+    
+    console.log('Creating new database connection...');
+    const opts = {
+      bufferCommands: false, // Disable Mongoose's buffering so commands fail immediately if connection is lost
+    };
+    
+    cached.promise = mongoose.connect(MONGO_URI, opts).then((mongooseInstance) => {
+      console.log('MongoDB Connected successfully.');
+      return mongooseInstance;
+    });
   }
   
   try {
-    console.log('Creating new database connection...');
-    cachedDbPromise = mongoose.connect(MONGO_URI);
-    await cachedDbPromise;
-    console.log('MongoDB Connected successfully.');
-  } catch (err) {
-    console.error('MongoDB connection error:', err);
-    cachedDbPromise = null; // Reset cache on error
-    throw err; // Rethrow to be caught in the route handler
+    cached.conn = await cached.promise;
+  } catch (e) {
+    cached.promise = null; // Reset promise on error to allow retry
+    console.error('MongoDB connection error:', e);
+    throw e; // Rethrow to be caught in the route handler
   }
-  
-  return cachedDbPromise;
+
+  return cached.conn;
 };
 
 
@@ -55,6 +75,40 @@ const transformContact = (contact) => {
   const { _id, __v, ...rest } = contact.toObject ? contact.toObject() : contact;
   return { id: _id.toString(), ...rest };
 };
+
+// POST to generate AI content
+app.post('/api/generate-content', async (req, res) => {
+  if (!ai) {
+    return res.status(503).json({ message: "AI service is not configured on the server." });
+  }
+
+  const { heading } = req.body;
+  if (!heading || typeof heading !== 'string' || heading.trim().length === 0) {
+    return res.status(400).json({ message: "Heading is required to generate content." });
+  }
+
+  try {
+    const prompt = `You are a marketing expert. Write a short, engaging, and friendly message for a WhatsApp broadcast. The main topic or heading is: "${heading}". The message should be concise, clear, and have a compelling call to action if appropriate. Do not include placeholders like "[Your Company Name]".`;
+    
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: prompt,
+      config: {
+        temperature: 0.7,
+        topP: 1,
+        topK: 32,
+        maxOutputTokens: 200,
+        thinkingConfig: { thinkingBudget: 0 } 
+      }
+    });
+
+    res.json({ content: response.text });
+  } catch (error) {
+    console.error("Error generating content with Gemini API:", error);
+    res.status(500).json({ message: "Failed to generate AI content. Please check the server logs." });
+  }
+});
+
 
 // GET all contacts
 app.get('/api/contacts', async (req, res) => {
